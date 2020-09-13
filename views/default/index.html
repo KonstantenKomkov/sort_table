@@ -1,0 +1,220 @@
+{{extend 'layout.html'}}
+<style>
+    .cursor-pointer {cursor: pointer;}
+    .active{background-color: #fff !important; color: rgb(0, 0, 0) !important;}
+</style>
+<script src="{{=URL('static','js/vue.min.js')}}"></script>
+<div id="app">
+    <div class="row mb-3">
+        <div class="col">
+            <div class="input-group">
+                <select class="form-control" v-model="currentKey" >
+                    <option disabled value=""></option>
+                    <option v-for="column in columns" :value="column.sortKey">${ column.name }</option>
+                </select>
+                <select class="form-control" v-model="comparisonType">
+                    <option disabled value=""></option>
+                    <option value='1'>=</option>
+                    <option value='2' :class="currentKey == 'name' ? 'd-none' : ''">></option>
+                    <option value='3' :class="currentKey == 'name' ? 'd-none' : ''"><</option>
+                    <option value='4' :class="currentKey == 'name' ? '' : 'd-none'">содержит</option>
+                </select>
+                <input :type="strOrInt ? 'text' : 'number'" v-model="userValue" class="form-control">
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover w-100">
+                    <thead class="thead-dark" >
+                        <tr>
+                            <th scope="col">Дата</th>
+                            <th v-for="column in columns" scope="col" class="cursor-pointer"
+                                :class="currentKey == column.sortKey ? 'active' : ''"
+                                @click="sortBy(column)">${ column.name }</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in sortedCars">
+                            <td>${ row.date }</td>
+                            <td>${ row.name }</td>
+                            <td>${ row.count }</td>
+                            <td>${ row.distance }</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="row mb-3">
+        <div class="col-6">
+            <p>Страница ${ currentPage } из ${ countPage }</p>
+        </div>
+        <div class="col-6">
+            <div class="d-flex flex-row justify-content-end">
+                <div class="align-self-center pr-3">
+                    Количество строк на странице
+                </div>
+                <div>
+                    <input type="number" min="1" :max="cars.length" id="rowsOnPage" v-model="rowsOnPage"
+                           class="form-control">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row pb-3">
+        <div class="col-6">
+            <button @click="prevPage" class="btn w-100 btn btn-dark">Предыдущая</button>
+        </div>
+        <div class="col-6">
+            <button @click="nextPage" class="btn w-100 btn btn-dark">Следующая</button>
+        </div>
+    </div>
+</div>
+<script>
+    function sendRequest(method, url, body = null) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open(method, url)
+
+            xhr.responseType = 'json'
+            xhr.setRequestHeader('Content-type', 'application/json')
+
+            xhr.onload = () => {
+                if (xhr.status >= 400) {
+                    reject(xhr.response)
+                } else {
+                    resolve(xhr.response)
+                }
+            }
+
+            xhr.onerror = () => {
+                reject(xhr.response)
+            }
+
+            xhr.send(JSON.stringify(body))
+        })
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        var url_get_cars = "{{=URL('default','get_cars')}}";
+        var preloader = document.getElementsByClassName('cssload-loader')[0];
+        preloader.style.display = "block";
+
+        var app = new Vue({
+            delimiters: ['${', '}'],
+            el: '#app',
+            data: {
+                cars: [],
+                columns: [
+                    {name: 'Название', reverse: false, sortKey: 'name'},
+                    {name: 'Количество', reverse: false, sortKey: 'count'},
+                    {name: 'Расстояние', reverse: false, sortKey: 'distance'},
+                ],
+                currentKey: 'name',
+                currentReverse: false,
+                currentPage: 1,
+                rowsOnPage: 10,
+                userValue: '',
+                comparisonType: 1,
+                countSortedRows: ''
+            },
+            watch: {
+                rowsOnPage: function() {
+                    return this.rowsOnPage
+                },
+                userValue: function() {
+                    return this.userValue
+                },
+                currentKey: function() {
+                    return this.currentKey
+                },
+                comparisonType: function() {
+                    return this.comparisonType
+                }
+            },
+            created: function() {
+                this.getCars()
+            },
+            methods: {
+                getCars() {
+                    sendRequest('GET', url_get_cars)
+                        .then(data => {
+                        preloader.style.display = 'none';
+                        this.cars = data;
+                    })
+                        .catch(err => {
+                        preloader.style.display = 'none';
+                        console.log(err)
+                    })
+                },
+                sortBy: function(column) {
+                    this.currentReverse = column.reverse;
+                    column.reverse = !column.reverse;
+                    this.currentKey = column.sortKey;
+                },
+                nextPage: function() {
+                    if(this.currentPage < this.countPage) this.currentPage++;
+                },
+                prevPage: function() {
+                    if(this.currentPage > 1) this.currentPage--;
+                }
+            },
+            computed: {
+                sortedCars: function() {
+                    this.countSortedRows = 0;
+                    return this.cars.sort((a, b) => {
+                        let modifier = 1;
+                        if (this.currentReverse) modifier = -1;
+                        if(a[this.currentKey] < b[this.currentKey]) return -1 * modifier;
+                        if(a[this.currentKey] > b[this.currentKey]) return 1 * modifier;
+                        return 0;
+                    }).filter((row, index) => {
+                        let start = (this.currentPage-1)*this.rowsOnPage;
+                        let end = this.currentPage*this.rowsOnPage;
+                        if (this.userValue == '') {
+                            if (index >= start && index < end) return true;
+                            this.countSortedRows = this.cars.length;
+                        } else {
+                            if (this.comparisonType == 1) {
+                                if (this.cars[index][this.currentKey] == this.userValue) {
+                                    this.countSortedRows++;
+                                    if (this.countSortedRows >= start && this.countSortedRows < end) return true;
+                                }
+                            } else if (this.comparisonType == 2) {
+                                if (this.cars[index][this.currentKey] > this.userValue) {
+                                    this.countSortedRows++;
+                                    if (this.countSortedRows >= start && this.countSortedRows < end) return true;
+                                }
+                            } else if (this.comparisonType == 3) {
+                                if (this.cars[index][this.currentKey] < this.userValue) {
+                                    this.countSortedRows++;
+                                    if (this.countSortedRows >= start && this.countSortedRows < end) return true;
+                                }
+                            } else {
+                                if (this.cars[index][this.currentKey].indexOf(this.userValue) !== -1) {
+                                    this.countSortedRows++;
+                                    if (this.countSortedRows >= start && this.countSortedRows < end) return true;
+                                }
+                            }
+                        };
+                    });
+                },
+                countPage: function() {
+                    let temp = Math.ceil(this.countSortedRows / this.rowsOnPage)
+                    if (temp == 0) {
+                        if (this.currentPage > 1) this.currentPage = 1;
+                        return 1;
+                    }
+                    if (this.currentPage >= temp) this.currentPage = temp;
+                    return temp;
+                },
+                strOrInt: function() {
+                    if (this.currentKey == 'name') return true;
+                    return false;
+                }
+            }
+        });
+    });
+</script>
